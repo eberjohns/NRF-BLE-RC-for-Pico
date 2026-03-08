@@ -4,12 +4,10 @@ from ble_uart_peripheral import BLEUART
 # Onboard LED
 led = machine.Pin("LED", machine.Pin.OUT)
 
-# ================= 🛡️ YOUR PINS =================
-# R_PINS: [PWM, IN1, IN2] -> 5, 4, 3
-# L_PINS: [PWM, IN1, IN2] -> 2, 1, 0
-R_PINS = [5, 4, 3] 
-L_PINS = [2, 1, 0] 
-SAFE_LIMIT = 0.5 # 50% Power
+# ================= 🛡️ PIN CONFIG =================
+R_PINS = [5, 4, 3] # PWM, IN1, IN2
+L_PINS = [2, 1, 0] # PWM, IN1, IN2
+SAFE_LIMIT = 0.5
 
 def init_motor(pins):
     pwm = machine.PWM(machine.Pin(pins[0])); pwm.freq(5000) 
@@ -24,7 +22,7 @@ def apply_motor(speed, pwm, in1, in2):
     in2.value(0 if speed >= 0 else 1)
     pwm.duty_u16(int(abs(speed) / 100 * 65535))
 
-# ================= 🔵 HYBRID DECODER =================
+# ================= 🔵 PRO DECODER =================
 ble = bluetooth.BLE()
 uart = BLEUART(ble, name="PicoRC")
 
@@ -33,47 +31,49 @@ def parse_dabble():
     if not raw or len(raw) < 7: return
     
     try:
-        # Check Header
         if raw[0] == 0xFF and raw[1] == 0x01:
-            # BUTTONS are in raw[5] for your version
+            # 1. THROTTLE (Triangle/Cross)
             btns = raw[5]
-            
-            # THROTTLE LOGIC
-            # Triangle is usually bit 2 (0x04), Cross is usually bit 5 (0x20)
             thrust = 0
-            if btns & 0x04: thrust = 100   # Triangle Pressed
-            elif btns & 0x20: thrust = -100 # Cross Pressed
+            if btns & 0x04: thrust = 100    # Triangle -> Gas
+            elif btns & 0x10: thrust = -100 # Cross -> Reverse
             
-            # STEERING LOGIC (Index 6)
-            steer_raw = raw[6] if raw[6] < 128 else raw[6] - 256
-            steering = steer_raw * 14.2 
+            # 2. SMOOTH STEERING (Byte 6)
+            # Normalizing your 0-127 (Right) and -1 to -128 (Left)
+            raw_steer = raw[6]
+            if raw_steer >= 128: 
+                # Negative range (Left)
+                steering = ((raw_steer - 256) / 128) * 100
+            else:
+                # Positive range (Right)
+                steering = (raw_steer / 127) * 100
             
-            # Deadzone (ignore tiny movements)
-            if abs(steering) < 10: steering = 0
+            # Deadzone for the joystick center
+            if abs(steering) < 8: steering = 0
 
-            # 🏎️ MIXING FOR RACE CAR FEEL
-            # Both moving + turning at the same time
+            # 🏎️ DIFFERENTIAL MIXING
+            # Turning right = Left motor faster, Right motor slower
             l_speed = thrust + steering
             r_speed = thrust - steering
             
             apply_motor(l_speed, l_pwm, l_in1, l_in2)
             apply_motor(r_speed, r_pwm, r_in1, r_in2)
             
-            # DEBUG: Uncomment this if it still doesn't work to see button hex
-            # print("Btn Byte:", hex(btns), "Thrust:", thrust)
-            
     except: pass
 
 uart.irq(handler=parse_dabble)
 
-print("🏎️ PicoRC: Triangle=Fwd, Cross=Rev, Stick=Turn")
+print("🏎️ RACER READY: Triangle=Gas, Cross=Rev, Stick=Steer")
 
-while True:
-    if not uart.is_connected():
-        apply_motor(0, l_pwm, l_in1, l_in2)
-        apply_motor(0, r_pwm, r_in1, r_in2)
-        led.toggle()
-        time.sleep(0.1)
-    else:
-        led.value(1)
-        time.sleep(0.1)
+def run():
+    while True:
+        if not uart.is_connected():
+            apply_motor(0, l_pwm, l_in1, l_in2)
+            apply_motor(0, r_pwm, r_in1, r_in2)
+            led.toggle()
+            time.sleep(0.1)
+        else:
+            led.value(1)
+            time.sleep(0.1)
+
+run()
