@@ -7,41 +7,38 @@ from hid_gamepad import Gamepad
 # Initialize the manual Gamepad
 gp = Gamepad(usb_hid.devices)
 
-# Hardware Setup:
-# Left Joystick VRy (Throttle) -> Pico A0 (GP26)
-# Right Joystick VRx (Steering) -> Pico A1 (GP27)
-throttle_axis = analogio.AnalogIn(board.A0) 
-steering_axis = analogio.AnalogIn(board.A1) 
+# Setup Joysticks
+# Joy 1 (Left): VRx -> A0 (Yaw/Steer), VRy -> A1 (Throttle)
+# Joy 2 (Right): VRx -> A2 (Roll/Slide), VRy -> Not Connected
+joy1_x = analogio.AnalogIn(board.A0) 
+joy1_y = analogio.AnalogIn(board.A1) 
+joy2_x = analogio.AnalogIn(board.A2) 
 
-def map_value(value):
-    """Maps 0-65535 to -127 to 127"""
-    # Inverse may be needed depending on your wiring (use 127 - ... if inverted)
-    return int((value / 65535) * 254 - 127)
+def map_val(raw):
+    # Maps 0-65535 to -127 to 127
+    val = int((raw / 65535) * 254 - 127)
+    # Deadzone logic: if the stick is near center, make it exactly 0
+    if abs(val) < 12: 
+        return 0
+    return val
 
-# Calibration: Center values aren't always 32768
-DEADZONE = 15 
-
-print("Joystick Remote Active!")
+print("Transmitter Active: 3 Axes + 1 Fake")
 
 while True:
-    # 1. Read raw values
-    t_raw = throttle_axis.value
-    s_raw = steering_axis.value
-
-    # 2. Map to HID range (-127 to 127)
-    t_val = map_value(t_raw)
-    s_val = map_value(s_raw)
-
-    # 3. Apply Deadzone (Prevents car from 'creeping' when sticks are idle)
-    if abs(t_val) < DEADZONE: t_val = 0
-    if abs(s_val) < DEADZONE: s_val = 0
-
-    # 4. Send to USB
-    # x/y coordinates for the phone to interpret
-    try:
-        gp.move_joysticks(x=s_val, y=t_val)
-    except Exception as e:
-        print("Error sending HID:", e)
+    # Read and map values
+    # Added negative sign to joy1_x if your steering is reversed
+    s_val = map_val(joy1_x.value)  # Steering / Yaw
+    t_val = map_val(joy1_y.value)  # Throttle
+    r_val = map_val(joy2_x.value)  # Roll / Extra
     
-    # Fast enough for RC (10ms delay = 100Hz refresh)
+    # Send all 4 axes to the HID device (Phone/PC)
+    # x/y is stick 1, z/r_z is stick 2
+    gp.move_joysticks(
+        x = s_val, 
+        y = t_val, 
+        z = r_val, 
+        r_z = 0    # The 4th axis you'll add later with ADS1115
+    )
+    
+    # 10ms delay (100Hz) is the "sweet spot" for RC response
     time.sleep(0.01)
