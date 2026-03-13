@@ -31,21 +31,26 @@
                 console.error(error);
             }
         }
+        let lastSent = "";
 
         function updateLoop() {
             const gamepads = navigator.getGamepads();
             if (gamepads[0]) {
                 const x = Math.round(gamepads[0].axes[0] * 100);
                 const y = Math.round(gamepads[0].axes[1] * -100);
-                document.getElementById('joy').innerText = `Joystick: X=${x}, Y=${y}`;
                 
-                // Send to Car
-                if (characteristic) {
+                const currentData = `${x},${y}`;
+                
+                // Only send if the data has changed and we are connected
+                if (characteristic && currentData !== lastSent) {
                     const encoder = new TextEncoder();
-                    characteristic.writeValue(encoder.encode(`${x},${y}\n`));
+                    // Using WithoutResponse is CRITICAL for speed
+                    characteristic.writeValueWithoutResponse(encoder.encode(currentData + "\n"));
+                    lastSent = currentData;
                 }
             }
-            requestAnimationFrame(updateLoop);
+            // Change from requestAnimationFrame to a fixed 40ms interval
+            setTimeout(updateLoop, 40); 
         }
     </script>
 </body>
