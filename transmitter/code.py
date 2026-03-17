@@ -1,44 +1,52 @@
 import board
-import time
-import analogio
+import busio
 import usb_hid
-from hid_gamepad import Gamepad 
+import time
+import adafruit_ads1x15.ads1115 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
 
-# Initialize the manual Gamepad
-gp = Gamepad(usb_hid.devices)
+# Initialize I2C and ADS1115
+i2c = busio.I2C(board.GP5, board.GP4)
+ads = ADS.ADS1115(i2c)
 
-# Setup Joysticks
-# Joy 1 (Left): VRx -> A0 (Yaw/Steer), VRy -> A1 (Throttle)
-# Joy 2 (Right): VRx -> A2 (Roll/Slide), VRy -> Not Connected
-joy1_x = analogio.AnalogIn(board.A0) 
-joy1_y = analogio.AnalogIn(board.A1) 
-joy2_x = analogio.AnalogIn(board.A2) 
+# Map pins A0-A3
+# Drone/Console Standard: 
+# A0/A1 = Left Stick (X/Y), A2/A3 = Right Stick (X/Y)
+channels = [AnalogIn(ads, i) for i in range(4)]
 
-def map_val(raw):
-    # Maps 0-65535 to -127 to 127
-    val = int((raw / 65535) * 254 - 127)
-    # Deadzone logic: if the stick is near center, make it exactly 0
-    if abs(val) < 12: 
-        return 0
-    return val
+# Find the Gamepad device
+def get_gamepad():
+    for device in usb_hid.devices:
+        if device.usage_page == 0x01 and device.usage == 0x05:
+            return device
+    return None
 
-print("Transmitter Active: 3 Axes + 1 Fake")
+gp_device = get_gamepad()
+report = bytearray(6) # 2 bytes buttons + 4 bytes axes
+
+def map_val(val):
+    # ADS1115 range (0-26400) to signed byte (-127 to 127)
+    scaled = int((val / 26400) * 254 - 127)
+    if abs(scaled) < 10: scaled = 0 # Deadzone for jitter
+    return max(min(scaled, 127), -127)
+
+print("🎮 Console Mode Active: Testing 4 Axes...")
 
 while True:
-    # Read and map values
-    # Added negative sign to joy1_x if your steering is reversed
-    s_val = map_val(joy1_x.value)  # Steering / Yaw
-    t_val = map_val(joy1_y.value)  # Throttle
-    r_val = map_val(joy2_x.value)  # Roll / Extra
+    # 1. Read ADS1115
+    axes = [map_val(c.value) for c in channels]
     
-    # Send all 4 axes to the HID device (Phone/PC)
-    # x/y is stick 1, z/r_z is stick 2
-    gp.move_joysticks(
-        x = s_val, 
-        y = t_val, 
-        z = r_val, 
-        r_z = 0    # The 4th axis you'll add later with ADS1115
-    )
+    # 2. Pack the Report (Byte 0-1: Buttons, Byte 2-5: X, Y, Z, Rz)
+    report[0] = 0x00 # Buttons 1-8 (Not used yet)
+    report[1] = 0x00 # Buttons 9-16
+    report[2] = -(axes[3]) & 0xFF # X
+    report[3] = -(axes[0]) & 0xFF # Y
+    report[4] = axes[1] & 0xFF # Z
+    report[5] = axes[2] & 0xFF # Rz
     
-    # 10ms delay (100Hz) is the "sweet spot" for RC response
-    time.sleep(0.01)
+    # 3. Send to PC/Phone
+    if gp_device:
+        gp_device.send_report(report)
+        
+    print(f"X:{axes[1]:>4} Y:{axes[0]:>4} RX:{axes[3]:>4} RY:{axes[2]:>4}", end='\r')
+    time.sleep(0.01) # 100Hz for ultra-smooth gaming
