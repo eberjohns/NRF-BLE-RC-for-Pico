@@ -33,7 +33,7 @@ print("🎮 JARVIS REMOTE ONLINE (HID + Radio)")
 while True:
     try:
         # Read Sticks
-        steering = -(map_val(channels[3].value)) # A3
+        steering = map_val(channels[3].value) # A3
         throttle = map_val(channels[0].value) # A0
         
         # Update PC Gamepad

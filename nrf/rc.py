@@ -5,7 +5,7 @@ from nrf24l01 import NRF24L01
 led = Pin("LED", Pin.OUT)
 
 # --- MOTOR SETUP ---
-R_PINS, L_PINS = [5, 4, 3], [2, 1, 0]
+R_PINS, L_PINS = [5, 4, 3], [2, 0, 1]
 def init_motor(pins):
     pwm = PWM(Pin(pins[0])); pwm.freq(5000) 
     return pwm, Pin(pins[1], Pin.OUT), Pin(pins[2], Pin.OUT)
