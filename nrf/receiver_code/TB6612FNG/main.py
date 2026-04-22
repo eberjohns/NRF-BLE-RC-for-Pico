@@ -21,7 +21,7 @@ def apply_motor(speed, pwm, in1, in2):
 
 # --- RADIO SETUP ---
 spi = SPI(0, sck=Pin(18), mosi=Pin(19), miso=Pin(16))
-nrf = NRF24L01(spi, Pin(17), Pin(20), payload_size=4)
+nrf = NRF24L01(spi, Pin(17), Pin(20), payload_size=4) # CSN, CE
 
 # SYNC SETTINGS
 nrf._write_reg(0x01, 0x00) # Disable Auto-Ack
